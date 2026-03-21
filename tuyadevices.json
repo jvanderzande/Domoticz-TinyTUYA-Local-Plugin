@@ -1,0 +1,240 @@
+[
+    {
+        "name": "Weerstation",
+        "id": "1231231231231231123ira",
+        "key": "yyyyyyyyyy",
+        "mac": "xx:0b:59:bf:04:xx",
+        "uuid": "xxxxxxxxxx",
+        "sn": "xxxxxxxx",
+        "category": "wsdcg",
+        "product_name": "Weather station",
+        "product_id": "d3cxdxqogwqvlwax",
+        "biz_type": 0,
+        "model": "WIFIWEST500WT",
+        "sub": false,
+        "icon": "https://images.tuyaeu.com/smart/icon/ay1513237774906SMBA3/c4a34ec5dcbfc6c88dc705a5ab24ab18.png",
+        "mapping": {
+            "1": {
+                "code": "temp_current",
+                "type": "Integer",
+                "values": {
+                    "unit": "\u00b0C",
+                    "min": -200,
+                    "max": 600,
+                    "scale": 1,
+                    "step": 1
+                }
+            },
+            "101": {
+                "code": "intemp",
+                "type": "Integer",
+                "values": {
+                    "unit": "\u00b0C",
+                    "min": -90,
+                    "max": 500,
+                    "scale": 1,
+                    "step": 1
+                }
+            },
+            "102": {
+                "code": "inhum",
+                "type": "Integer",
+                "values": {
+                    "unit": "%",
+                    "min": 200,
+                    "max": 950,
+                    "scale": 1,
+                    "step": 1
+                }
+            },
+            "103": {
+                "code": "ch1temp",
+                "type": "Integer",
+                "values": {
+                    "unit": "C",
+                    "min": -400,
+                    "max": 600,
+                    "scale": 1,
+                    "step": 1
+                }
+            },
+            "104": {
+                "code": "ch1hum",
+                "type": "Integer",
+                "values": {
+                    "unit": "%",
+                    "min": 200,
+                    "max": 950,
+                    "scale": 1,
+                    "step": 1
+                }
+            },
+            "109": {
+                "code": "pressure",
+                "type": "Integer",
+                "values": {
+                    "unit": "hPa",
+                    "min": 300,
+                    "max": 12000,
+                    "scale": 1,
+                    "step": 1
+                }
+            },
+            "110": {
+                "code": "windspeed",
+                "type": "Integer",
+                "values": {
+                    "unit": "kph",
+                    "min": 0,
+                    "max": 2500,
+                    "scale": 0,
+                    "step": 1
+                }
+            },
+            "111": {
+                "code": "gustwind",
+                "type": "Integer",
+                "values": {
+                    "unit": "kph",
+                    "min": 0,
+                    "max": 2500,
+                    "scale": 0,
+                    "step": 1
+                }
+            },
+            "112": {
+                "code": "wd",
+                "type": "Enum",
+                "values": {
+                    "range": [
+                        "N",
+                        "NNE",
+                        "NE",
+                        "ENE",
+                        "E",
+                        "ESE",
+                        "SE",
+                        "SSE",
+                        "S",
+                        "SSW",
+                        "SW",
+                        "WSW",
+                        "W",
+                        "WNW",
+                        "NW",
+                        "NNW"
+                    ]
+                }
+            },
+            "113": {
+                "code": "rain_1h",
+                "type": "Integer",
+                "values": {
+                    "unit": "mm",
+                    "min": 0,
+                    "max": 60000,
+                    "scale": 2,
+                    "step": 1
+                }
+            },
+            "114": {
+                "code": "rain_24h",
+                "type": "Integer",
+                "values": {
+                    "unit": "mm",
+                    "min": 0,
+                    "max": 60000,
+                    "scale": 2,
+                    "step": 1
+                }
+            },
+            "126": {
+                "code": "com",
+                "type": "Enum",
+                "values": {
+                    "range": [
+                        "moist",
+                        "dry",
+                        "comfortable",
+                        "na"
+                    ]
+                }
+            },
+            "127": {
+                "code": "alarm",
+                "type": "Raw",
+                "values": {
+                    "maxlen": 128
+                }
+            },
+            "128": {
+                "code": "alert",
+                "type": "Raw",
+                "values": {
+                    "maxlen": 128
+                }
+            },
+            "129": {
+                "code": "unit",
+                "type": "Raw",
+                "values": {
+                    "maxlen": 128
+                }
+            },
+            "130": {
+                "code": "battery",
+                "type": "Raw",
+                "values": {
+                    "maxlen": 128
+                }
+            },
+            "131": {
+                "code": "basic",
+                "type": "Raw",
+                "values": {
+                    "maxlen": 128
+                }
+            },
+            "132": {
+                "code": "alertup",
+                "type": "Bitmap",
+                "values": {
+                    "label": [
+                        "inu",
+                        "ind",
+                        "ch1u",
+                        "ch1d",
+                        "ch2u",
+                        "ch2d",
+                        "ch3u",
+                        "ch3d",
+                        "ch1f",
+                        "ch2f",
+                        "ch3f"
+                    ],
+                    "maxlen": 11
+                }
+            },
+            "133": {
+                "code": "datadisplay",
+                "type": "Raw",
+                "values": {
+                    "maxlen": 128
+                }
+            },
+            "134": {
+                "code": "rain",
+                "type": "Integer",
+                "values": {
+                    "unit": "mm",
+                    "min": 0,
+                    "max": 10000,
+                    "scale": 2,
+                    "step": 1
+                }
+            }
+        },
+        "ip": "192.168.0.162",
+        "version": "3.5"
+    }
+]
