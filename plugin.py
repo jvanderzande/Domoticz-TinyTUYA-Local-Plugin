@@ -59,8 +59,8 @@ class BasePlugin:
         Domoticz.Log('TinyTUYA ' + Parameters['Version'] + ' plugin started')
         Domoticz.Log('TinyTuya Version:' + tinytuya.version )
 
-        global testData
-
+        global testData, DEBUGLEVEL
+        DEBUGLEVEL = int(Parameters['Mode6'])
         if Parameters['Mode6'] != '0':
             Domoticz.Debugging(int(Parameters['Mode6']))
             # Domoticz.Log('Debugger started, use 'telnet 0.0.0.0 4444' to connect')
@@ -196,17 +196,17 @@ def onCreateDevices():
 
         Domoticz.Debug('Devices: ' + str(Devices))
         # Create devices
-        for unitid, units in tuya2domo.items():
-            for unit, devinfo in units.items():
-                # Domoticz.Log('Check for: ' + str(unitid) + ' - ' + str(unit))
-                if createDevice(unitid, unit):
-                    subType = devinfo.get('subType', 1)
-                    Domoticz.Log(f"Create Name={devinfo['Name']},DeviceID={unitid},Unit={unit},Type={devinfo['Type']}, Subtype={subType},Used=1")
+        for t2d_dhwid, units in tuya2domo.items():
+            for t2d_dunitid, t2d_dunitinfo in units.items():
+                # Domoticz.Log('Check for: ' + str(t2d_dhwid) + ' - ' + str(t2d_dunitid))
+                if createDevice(t2d_dhwid, t2d_dunitid):
+                    subType = t2d_dunitinfo.get('subType', 1)
+                    Domoticz.Log(f"Create Name={t2d_dunitinfo['Name']},DeviceID={t2d_dhwid},Unit={t2d_dunitid},Type={t2d_dunitinfo['Type']}, Subtype={subType},Used=1")
                     Domoticz.Unit(
-                        Name=devinfo['Name'],
-                        DeviceID=str(unitid),
-                        Unit=int(unit),
-                        Type=int(devinfo['Type']),  # Temp+Hum combined
+                        Name=t2d_dunitinfo['Name'],
+                        DeviceID=str(t2d_dhwid),
+                        Unit=int(t2d_dunitid),
+                        Type=int(t2d_dunitinfo['Type']),  # Temp+Hum combined
                         Subtype=int(subType),
                         Used=1
                     ).Create()
@@ -218,15 +218,43 @@ def onCreateDevices():
         exit
 
 
+def tuya_load_prev_state():
+    global TuyaStateFile
+    TuyaStateFile = Parameters['HomeFolder'] + '/tuya_state_combined.json'
+    if os.path.exists(TuyaStateFile):
+        try:
+            with open(TuyaStateFile, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def tuya_save_state(state):
+    with open(TuyaStateFile, "w") as f:
+        json.dump(state, f, indent=2)
+
+def tuya_update_state(new_data, device_id):
+    state = tuya_load_prev_state()
+
+    # Ensure device exists
+    if device_id not in state:
+        state[device_id] = {"dps": {}}
+
+    # Merge DPS values
+    state[device_id]["dps"].update(new_data.get("dps", {}))
+
+    tuya_save_state(state)
+    return state
+
 def onHandleThread(startup):
     # Run for every device on startup and heartbeat
     try:
         # Update devices
-        for unitid, unitinfo in tuya2domo.items():
+        for t2d_dhwid, t2d_dhwinfo in tuya2domo.items():
             # Domoticz.Debug( 'Device name=' + str(tuyaunit['name']) + ' id=' + str(tuyaunit['id']) + ' ip=' + str(tuyaunit['ip']) + ' version=' + str(tuyaunit['version'])) # ' key=' + str(tuyaunit['key']) +
 
-            tuyaunit = next((tuyaunit for tuyaunit in tuyadevsensors if tuyaunit['id'] == str(unitid)), None)
-            # Domoticz.Debug('unitid:' + str(unitid) + '   tdev:' + str(tdev))
+            tuyaunit = next((tuyaunit for tuyaunit in tuyadevsensors if tuyaunit['id'] == str(t2d_dhwid)), None)
+            # Domoticz.Debug('t2d_dhwid:' + str(t2d_dhwid) + '   tdev:' + str(tdev))
             # Domoticz.Debug(str(code_list))
             tuyaunitdevices = tuyaunit['mapping']
             # update devices in Domoticz
@@ -235,62 +263,44 @@ def onHandleThread(startup):
             tuya.detect_available_dps()
             tuya.detect_available_dps() # Two times for detection bulb devices
             tuyastatus = tuya.status()
-            last_update = getConfigItem(str(unitid), 'last_update')
+            tuyastatus = tuya.status()
+
+            if DEBUGLEVEL > 0:
+                # ---- save/merge tuya stateinfo in debug modes to tuya_state_combined.json ----
+                tuya_update_state(tuyastatus, str(tuyaunit['id']))
+
+            last_update = getConfigItem(str(t2d_dhwid), 'last_update')
             if isinstance(last_update, dict):
                 last_update = last_update.get('last_update', 0)
 
             if float(time.time()) > float(last_update) or testData:
                 # Domoticz.Debug('tuyastatus: ' + str(tuyastatus))
                 dps = tuyastatus.get('dps', {})
-                for unit, devinfo in unitinfo.items():
-                    # Domoticz.Debug(Devices[str(unitid)].Units[int(unit)])
+                for t2d_dunitid, t2d_dunitinfo in t2d_dhwinfo.items():
+                    # Domoticz.Debug(Devices[str(t2d_dhwid)].Units[int(t2d_dunitid)])
                     try:
-                        # ddev = Devices[str(unitid)].Units[int(unit)]
-                        # dtype = ddev.Type
-                        # dtype = Devices[str(unitid)].Units[unit]
-                        # Domoticz.Debug('process unit '+str(unit) + "  dtype:" + str(dtype))
+                        # Domoticz.Debug('process t2d_dunitid '+str(t2d_dunitid) + "  dtype:" + str(dtype))
                         svalue=""
-                        for dunit, tunit in devinfo["TuyaIDs"].items():  # loop through all entries/columns for this unit
-                            # Domoticz.Debug('--> process '+str(dunit)+  " -> tunit:" + str(tunit))
+                        for t2d_dunitseqnr, t2d_tunitid in t2d_dunitinfo["TuyaIDs"].items():  # loop through all entries/columns for this t2d_dunitid
+                            # Domoticz.Debug('--> process '+str(t2d_dunitseqnr)+  " -> t2d_tunitid:" + str(t2d_tunitid))
                             # Domoticz.Debug('>dps '+ str(dps))
-                            if tunit == "0":
+                            if t2d_tunitid == "0":
                                 currentstatus = 0
                             else:
-                                item_value = dps.get(tunit, 0)   # tunit is e.g., '101'
-                                # Domoticz.Debug('>process tunit '+ tunit + '  item_value: ' + str(item_value))
+                                item_value = dps.get(t2d_tunitid, 0)   # t2d_tunitid is e.g., '101'
+                                # Domoticz.Debug('>process t2d_tunitid '+ t2d_tunitid + '  item_value: ' + str(item_value))
                                 # Get Tuya sensor info
-                                tuyasubdev = tuyaunitdevices.get(tunit)
+                                tuyasubdev = tuyaunitdevices.get(t2d_tunitid)
                                 # Domoticz.Debug('>process tuyasubdev: '+str(tuyasubdev))
-                                factor = 1
-                                if "factor" in devinfo:
-                                    if dunit in devinfo["factor"]:
-                                        factor = float(devinfo["factor"][dunit])
-                                # Domoticz.Log('>process tunit '+ tunit + '  item_value: ' + str(item_value) + '  factor: ' + str(factor))
-                                currentstatus = get_scale(item_value, tuyasubdev)
-                                # factor 0 means => Don't try to translate or use factor and keep asis.
-                                if factor != 0:
-                                    # check if there is a range defined to which we need to translate the string to itemnumber
-                                    if "range" in tuyasubdev["values"]:
-                                        range_list = tuyasubdev["values"]["range"]
-                                        try:
-                                            # translate string to itemnumber
-                                            currentstatus = range_list.index(currentstatus)
-                                        except ValueError:
-                                            currentstatus = 1  # or some default
-                                    else:
-                                        currentstatus = currentstatus
-                                    # apply the found factor in case not 1
-                                    if factor != 1:
-                                        currentstatus = round(currentstatus * factor, 2)
-                                    # Domoticz.Log('<process tunit '+ tunit + '  item_value: ' + str(item_value) + '  currentstatus: ' + str(currentstatus) + '  factor: ' + str(factor))
+                                currentstatus = get_scale(item_value, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr)
 
                             if svalue != "":
                                 svalue+=";"
                             svalue += str(currentstatus)
-                            Domoticz.Debug('+ process unit '+str(unit) + ' dunit:' + str(dunit) + '  tunit:' + str(tunit) + ' currentstatus:' + str(currentstatus) + ' new svalue:' + str(svalue))
+                            Domoticz.Debug('+ process t2d_dunitid '+str(t2d_dunitid) + ' t2d_dunitseqnr:' + str(t2d_dunitseqnr) + '  t2d_tunitid:' + str(t2d_tunitid) + ' currentstatus:' + str(currentstatus) + ' new svalue:' + str(svalue))
 
-                        Domoticz.Debug('< process unit '+str(unit)+ ' svalue:' + str(svalue))
-                        UpdateDevice(str(unitid), unit, str(svalue), 0, 0)
+                        Domoticz.Debug('< process t2d_dunitid '+str(t2d_dunitid)+ ' svalue:' + str(svalue))
+                        UpdateDevice(str(t2d_dhwid), t2d_dunitid, str(svalue), 0, 0)
                     except Exception:
                         Domoticz.Error('device value error:\n' + traceback.format_exc())
 
@@ -438,25 +448,25 @@ def battery_device(ID, ResultValue, StatusDeviceTuya):
             currentbattery = StatusDeviceTuya
         if searchCode('residual_electricity', ResultValue):
             currentbattery = StatusDeviceTuya
-        for unit in Devices[ID].Units:
-            if str(currentbattery) != str(Devices[ID].Units[unit].BatteryLevel):
-                Devices[ID].Units[unit].BatteryLevel = currentbattery
-                Devices[ID].Units[unit].Update()
+        for t2d_dunitid in Devices[ID].Units:
+            if str(currentbattery) != str(Devices[ID].Units[t2d_dunitid].BatteryLevel):
+                Devices[ID].Units[t2d_dunitid].BatteryLevel = currentbattery
+                Devices[ID].Units[t2d_dunitid].Update()
     return
 
 def online_offline(ID, StatusDeviceTuya):
-    for unit in Devices[ID].Units:
+    for t2d_dunitid in Devices[ID].Units:
         # Domoticz.Debug(str(ID) + '   ' + str(StatusDeviceTuya))
         if str(StatusDeviceTuya) != str(Devices[ID].TimedOut):
             Devices[ID].TimedOut = StatusDeviceTuya
-            Devices[ID].Units[unit].Update()
+            Devices[ID].Units[t2d_dunitid].Update()
     return
 
 def nextUnit(ID):
-    unit = 1
-    while unit in Devices(ID) and unit < 255:
-        unit = unit + 1
-    return unit
+    t2d_dunitid = 1
+    while t2d_dunitid in Devices(ID) and t2d_dunitid < 255:
+        t2d_dunitid = t2d_dunitid + 1
+    return t2d_dunitid
 
 
 def ping_ok(sHost) -> bool:
@@ -476,8 +486,8 @@ def set_scale(raw, tuyasubdev):
         if tuyasubdev['values'] in 'scale':
             scale = tuyasubdev['values'].get('scale')
         # step = the_values.get('step', 0)
-        if tuyasubdev['values'] in 'unit':
-            unit = tuyasubdev['values'].get('unit')
+        if tuyasubdev['values'] in 't2d_dunitid':
+            t2d_dunitid = tuyasubdev['values'].get('t2d_dunitid')
         if tuyasubdev['values'] in 'max':
             max = tuyasubdev['values'].get('max')
 
@@ -499,7 +509,7 @@ def set_scale(raw, tuyasubdev):
         result = str(raw)
     return result
 
-def get_scale(raw, tuyasubdev):
+def get_scale(raw, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr):
     scale = 0
 
     # Check if raw is a valid number (int, float, or numeric string)
@@ -507,7 +517,6 @@ def get_scale(raw, tuyasubdev):
         # Convert numeric strings to floats
         raw = float(raw) if isinstance(raw, str) else raw
         result = raw
-
         try:
             # Domoticz.Debug('Raw Value: ' + str(raw) + '  Type: ' + str(type(raw)))
             # Domoticz.Debug('Item Values: ' + str(tuyasubdev['values']))
@@ -515,16 +524,16 @@ def get_scale(raw, tuyasubdev):
                 scale = tuyasubdev['values'].get('scale')
 
             if 'unit' in tuyasubdev['values']:
-                unit = tuyasubdev['values'].get('unit')
+                t2d_dunitid = tuyasubdev['values'].get('t2d_dunitid')
 
             if 'max' in tuyasubdev['values']:
                 max_value = tuyasubdev['values'].get('max')
-            Domoticz.Debug(f'-> raw: {raw}  scale:{scale} unit:{unit}  max_value:{max_value}')
+            Domoticz.Debug(f'-> raw: {raw}  scale:{scale} t2d_dunitid:{t2d_dunitid}  max_value:{max_value}')
 
             if scale == 0:
-                if unit == 'V' and len(str(max_value)) >= 4:
+                if t2d_dunitid == 'V' and len(str(max_value)) >= 4:
                     result = raw / 10
-                elif unit == 'W' and len(str(max_value)) >= 5:
+                elif t2d_dunitid == 'W' and len(str(max_value)) >= 5:
                     result = raw / 10
                 else:
                     result = int(raw)
@@ -540,12 +549,36 @@ def get_scale(raw, tuyasubdev):
             else:
                 result = int(raw)
                 Domoticz.Debug(f'else raw: {raw}  scale:{scale} result {result}')
-        except:
+
+        except Exception as err:
+            Domoticz.Error('get_scale error:\n' + traceback.format_exc())
             result = raw
     else:
         # If raw is not numeric, return it unmodified
         result = raw
         Domoticz.Debug('Non-numeric input, returning raw value: ' + str(result))
+
+    # process defined factor or range translate in tuya2domoticz.json
+    factor = 1
+    if "factor" in t2d_dunitinfo:
+        if t2d_dunitseqnr in t2d_dunitinfo["factor"]:
+            factor = float(t2d_dunitinfo["factor"][t2d_dunitseqnr])
+    #factor == 0 means use content as-is
+    Domoticz.Debug('-process t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
+    if factor != 0:
+        # check if there is a range defined to which we need to translate the string to itemnumber
+        if "range" in tuyasubdev["values"]:
+            range_list = tuyasubdev["values"]["range"]
+            try:
+                # translate string to itemnumber
+                result = range_list.index(result)
+                Domoticz.Debug('- range-> t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
+            except ValueError:
+                result = 1  # or some default
+        # apply the found factor in case not 1
+        if factor != 1:
+            result = round(result * factor, 2)
+        Domoticz.Debug('<process t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
 
     return result
 
