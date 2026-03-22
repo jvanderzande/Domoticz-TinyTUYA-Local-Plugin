@@ -47,6 +47,7 @@ import ast
 import time
 import base64
 import traceback
+from datetime import datetime, timedelta
 
 
 class BasePlugin:
@@ -95,7 +96,7 @@ class BasePlugin:
         # Domoticz.Debug('sValue: ' + str(tuyaunit.sValue) + ' Type ' + str(type(tuyaunit.sValue)))
         # Domoticz.Debug('LastLevel: ' + str(tuyaunit.LastLevel))
         # Domoticz.Debug('Type: ' + str(tuyaunit.Type) + ' ' + str(tuyaunit.SubType) + ' ' + str(tuyaunit.SwitchType))
-        # Domoticz.Debug(str(tuyadevices))
+        # Domoticz.Debug(str(tuyadevsensors))
         # Control device and update status in Domoticz
         if Command == 'Set Level':
             if tuyaunit.Type == 244 and tuyaunit.SubType == 62 and tuyaunit.SwitchType == 18:
@@ -171,27 +172,27 @@ def onHeartbeat():
 
 def onCreateDevices():
     try:
-        global tuya, tuyadevices, last_update, result, tuya2domo
+        global tuya, tuyadevsensors, last_update, result, tuya2domo
         last_update = time.time()
-        tuyadevices = None
-        with open(Parameters['HomeFolder'] + '/tuyadevices.json') as dFile:
-            tuyadevices = json.load(dFile)
+        tuyadevsensors = None
+        if os.path.isfile(Parameters['HomeFolder'] + '/tuyadevices.json'):
+            with open(Parameters['HomeFolder'] + '/tuyadevices.json') as dFile:
+                tuyadevsensors = json.load(dFile)
+    except Exception as err:
+        Domoticz.Error('handleThread error:\n' + traceback.format_exc())
 
+    # Initialize/Update devices from TUYA API
+    if tuyadevsensors is None:
+        Domoticz.Error('tuyadevices.json is missing in the plugin folder!')
+        exit
+
+    try:
         tuya2domo = {}
         if os.path.isfile(Parameters['HomeFolder'] + '/tuya2domoticz.json'):
             with open(Parameters['HomeFolder'] + '/tuya2domoticz.json') as dFile:
                 tuya2domo = json.load(dFile)
-        # Domoticz.Debug('Devs: ' + str(tuyadevices))
+        # Domoticz.Debug('Devs: ' + str(tuyadevsensors))
         # Domoticz.Debug('Result: ' + str(result))
-
-        # Initialize/Update devices from TUYA API
-        if tuyadevices is None:
-            Domoticz.Error('tuyadevices.json is missing in the plugin folder!')
-            exit
-
-        if tuya2domo is None:
-            Domoticz.Error('tuya2domoticz.json is missing in the plugin folder!')
-            exit
 
         Domoticz.Debug('Devices: ' + str(Devices))
         # Create devices
@@ -212,21 +213,19 @@ def onCreateDevices():
     except Exception as err:
         Domoticz.Error('handleThread error:\n' + traceback.format_exc())
 
+    if tuya2domo is None:
+        Domoticz.Error('tuya2domoticz.json is missing in the plugin folder!')
+        exit
+
 
 def onHandleThread(startup):
     # Run for every device on startup and heartbeat
     try:
-        # Initialize/Update devices from TUYA API
-        if testData == True:
-            with open(Parameters['HomeFolder'] + '/snapshot.json') as rFile:
-                result = json.load(rFile)
-
         # Update devices
-
         for unitid, unitinfo in tuya2domo.items():
             # Domoticz.Debug( 'Device name=' + str(tuyaunit['name']) + ' id=' + str(tuyaunit['id']) + ' ip=' + str(tuyaunit['ip']) + ' version=' + str(tuyaunit['version'])) # ' key=' + str(tuyaunit['key']) +
 
-            tuyaunit = next((tuyaunit for tuyaunit in tuyadevices if tuyaunit['id'] == str(unitid)), None)
+            tuyaunit = next((tuyaunit for tuyaunit in tuyadevsensors if tuyaunit['id'] == str(unitid)), None)
             # Domoticz.Debug('unitid:' + str(unitid) + '   tdev:' + str(tdev))
             # Domoticz.Debug(str(code_list))
             tuyaunitdevices = tuyaunit['mapping']
@@ -246,8 +245,8 @@ def onHandleThread(startup):
                 for unit, devinfo in unitinfo.items():
                     # Domoticz.Debug(Devices[str(unitid)].Units[int(unit)])
                     try:
-                        ddev = Devices[str(unitid)].Units[int(unit)]
-                        dtype = ddev.Type
+                        # ddev = Devices[str(unitid)].Units[int(unit)]
+                        # dtype = ddev.Type
                         # dtype = Devices[str(unitid)].Units[unit]
                         # Domoticz.Debug('process unit '+str(unit) + "  dtype:" + str(dtype))
                         svalue=""
@@ -257,36 +256,42 @@ def onHandleThread(startup):
                             if tunit == "0":
                                 currentstatus = 0
                             else:
-                                item_value = dps.get(tunit, "unknown")   # tunit is e.g., '101'
+                                item_value = dps.get(tunit, 0)   # tunit is e.g., '101'
                                 # Domoticz.Debug('>process tunit '+ tunit + '  item_value: ' + str(item_value))
-                                # Get Dev info
-                                # Domoticz.Debug('> tuyaunitdevices '+ str(tuyaunitdevices))
-                                tuyadevice = tuyaunitdevices.get(tunit)
-                                # Domoticz.Debug('>process tuyadevice: '+str(tuyadevice))
+                                # Get Tuya sensor info
+                                tuyasubdev = tuyaunitdevices.get(tunit)
+                                # Domoticz.Debug('>process tuyasubdev: '+str(tuyasubdev))
                                 factor = 1
                                 if "factor" in devinfo:
                                     if dunit in devinfo["factor"]:
                                         factor = float(devinfo["factor"][dunit])
-                                # Domoticz.Debug('>process tunit '+ tunit + '  item_value: ' + str(item_value) + '  factor: ' + str(factor))
-                                if factor !=0 and "range" in tuyadevice["values"]:
-                                    range_list = tuyadevice["values"]["range"]
-                                    try:
-                                        currentstatus = range_list.index(item_value)
-                                        currentstatus = int(currentstatus * factor)
-                                        # Domoticz.Debug('> list process tunit '+ tunit + '  currentstatus: ' + str(currentstatus))
-                                    except ValueError:
-                                        currentstatus = 1  # or some default
-                                else:
-                                    currentstatus = get_scale(item_value, tuyadevice)
+                                # Domoticz.Log('>process tunit '+ tunit + '  item_value: ' + str(item_value) + '  factor: ' + str(factor))
+                                currentstatus = get_scale(item_value, tuyasubdev)
+                                # factor 0 means => Don't try to translate or use factor and keep asis.
+                                if factor != 0:
+                                    # check if there is a range defined to which we need to translate the string to itemnumber
+                                    if "range" in tuyasubdev["values"]:
+                                        range_list = tuyasubdev["values"]["range"]
+                                        try:
+                                            # translate string to itemnumber
+                                            currentstatus = range_list.index(currentstatus)
+                                        except ValueError:
+                                            currentstatus = 1  # or some default
+                                    else:
+                                        currentstatus = currentstatus
+                                    # apply the found factor in case not 1
+                                    if factor != 1:
+                                        currentstatus = round(currentstatus * factor, 2)
+                                    # Domoticz.Log('<process tunit '+ tunit + '  item_value: ' + str(item_value) + '  currentstatus: ' + str(currentstatus) + '  factor: ' + str(factor))
 
                             if svalue != "":
                                 svalue+=";"
                             svalue += str(currentstatus)
-                            # Domoticz.Debug('+ process unit '+str(unit) + ' dunit:' + str(dunit) + '  tunit:' + str(tunit) + ' currentstatus:' + str(currentstatus) + ' new svalue:' + str(svalue))
+                            Domoticz.Debug('+ process unit '+str(unit) + ' dunit:' + str(dunit) + '  tunit:' + str(tunit) + ' currentstatus:' + str(currentstatus) + ' new svalue:' + str(svalue))
 
                         Domoticz.Debug('< process unit '+str(unit)+ ' svalue:' + str(svalue))
                         UpdateDevice(str(unitid), unit, str(svalue), 0, 0)
-                    except Exception as err:
+                    except Exception:
                         Domoticz.Error('device value error:\n' + traceback.format_exc())
 
     except Exception as err:
@@ -315,9 +320,17 @@ def DumpConfigToLog():
 
 def UpdateDevice(ID, Unit, sValue, nValue, TimedOut, AlwaysUpdate = 0):
     Unit = int(Unit)
-    # AlwaysUpdate = 1
+    #update sensors each minute when not changed
+    update_due = False
+    try:
+        last_update = datetime.strptime(Devices[ID].Units[Unit].LastUpdate, "%Y-%m-%d %H:%M:%S")
+        if datetime.now() - last_update > timedelta(minutes=1):
+            update_due = True
+    except Exception:
+        update_due = False
+
     # Domoticz.Debug('? Update device value: ' + str(ID) + ' Unit: ' + str(Unit) + ' sValue: ' +  str(sValue) + ' nValue: ' + str(nValue) + ' TimedOut=' + str(TimedOut))
-    if str(Devices[ID].Units[Unit].sValue) != str(sValue) or str(Devices[ID].Units[Unit].nValue) != str(nValue) or str(Devices[ID].TimedOut) != str(TimedOut) or AlwaysUpdate == 1:
+    if update_due or str(Devices[ID].Units[Unit].sValue) != str(sValue) or str(Devices[ID].Units[Unit].nValue) != str(nValue) or str(Devices[ID].TimedOut) != str(TimedOut) or AlwaysUpdate == 1:
         if sValue == None:
             sValue = Devices[ID].Units[Unit].sValue
         if type(sValue) == int or type(sValue) == float:
@@ -336,9 +349,9 @@ def UpdateDevice(ID, Unit, sValue, nValue, TimedOut, AlwaysUpdate = 0):
 def SendCommand(ID, Unit, Status, Type = ''):
     Domoticz.Debug('SendCommand =  ID:' + str(ID) + ' IP:' + str(getConfigItem(ID, 'ip'))  + ' Type:' +  str(Type) + ' Status:' +  str(Status) + ' Status Type:' +  str(type(Status)) + ' Version:' + str(getConfigItem(ID, 'version')))
     if Type == 'light':
-        selected_device = next((tuyaunit for tuyaunit in tuyadevices if tuyaunit['id'] == str(ID)), None)
-        tuyadevice = selected_device['mapping'][str(Unit)]
-        Status = get_scale(Status, tuyadevice)
+        selected_device = next((tuyaunit for tuyaunit in tuyadevsensors if tuyaunit['id'] == str(ID)), None)
+        tuyasubdev = selected_device['mapping'][str(Unit)]
+        Status = get_scale(Status, tuyasubdev)
         # Domoticz.Debug('Status: ' + str(Status))
         tuya = tinytuya.BulbDevice(dev_id=str(ID), address=str(getConfigItem(ID, 'ip')), local_key=str(getConfigItem(ID, 'key')), version=str(getConfigItem(ID, 'version')), connection_timeout=5, connection_retry_limit=1)
         tuya.detect_available_dps()
@@ -366,9 +379,9 @@ def SendCommand(ID, Unit, Status, Type = ''):
             tuya.turn_off()
         Domoticz.Debug('Command send to tuya BulbDevice: ' + str(ID) + ", " + str({'commands': [{'Type': Type, 'value': Status}]}))
     else:
-        selected_device = next((tuyaunit for tuyaunit in tuyadevices if tuyaunit['id'] == str(ID)), None)
-        tuyadevice = selected_device['mapping'][str(Unit)]
-        Status = get_scale(Status, tuyadevice)
+        selected_device = next((tuyaunit for tuyaunit in tuyadevsensors if tuyaunit['id'] == str(ID)), None)
+        tuyasubdev = selected_device['mapping'][str(Unit)]
+        Status = get_scale(Status, tuyasubdev)
         tuya = tinytuya.Device(dev_id=str(ID), address=str(getConfigItem(ID, 'ip')), local_key=str(getConfigItem(ID, 'key')), version=str(getConfigItem(ID, 'version')), connection_timeout=5, connection_retry_limit=1)
         tuya.detect_available_dps()
         payload = tuya.generate_payload(tinytuya.CONTROL_NEW, {Unit: Status})
@@ -456,17 +469,17 @@ def ping_ok(sHost) -> bool:
 
     return True
 
-def set_scale(raw, tuyadevice):
+def set_scale(raw, tuyasubdev):
     scale = 0
     try:
-        # Domoticz.Debug('Scale :' + str(tuyadevice['values'].get('scale', 0 )))
-        if tuyadevice['values'] in 'scale':
-            scale = tuyadevice['values'].get('scale')
+        # Domoticz.Debug('Scale :' + str(tuyasubdev['values'].get('scale', 0 )))
+        if tuyasubdev['values'] in 'scale':
+            scale = tuyasubdev['values'].get('scale')
         # step = the_values.get('step', 0)
-        if tuyadevice['values'] in 'unit':
-            unit = tuyadevice['values'].get('unit')
-        if tuyadevice['values'] in 'max':
-            max = tuyadevice['values'].get('max')
+        if tuyasubdev['values'] in 'unit':
+            unit = tuyasubdev['values'].get('unit')
+        if tuyasubdev['values'] in 'max':
+            max = tuyasubdev['values'].get('max')
 
         if scale == 1:
             result = int(raw * 10)
@@ -486,7 +499,7 @@ def set_scale(raw, tuyadevice):
         result = str(raw)
     return result
 
-def get_scale(raw, tuyadevice):
+def get_scale(raw, tuyasubdev):
     scale = 0
 
     # Check if raw is a valid number (int, float, or numeric string)
@@ -497,15 +510,15 @@ def get_scale(raw, tuyadevice):
 
         try:
             # Domoticz.Debug('Raw Value: ' + str(raw) + '  Type: ' + str(type(raw)))
-            # Domoticz.Debug('Item Values: ' + str(tuyadevice['values']))
-            if 'scale' in tuyadevice['values']:
-                scale = tuyadevice['values'].get('scale')
+            # Domoticz.Debug('Item Values: ' + str(tuyasubdev['values']))
+            if 'scale' in tuyasubdev['values']:
+                scale = tuyasubdev['values'].get('scale')
 
-            if 'unit' in tuyadevice['values']:
-                unit = tuyadevice['values'].get('unit')
+            if 'unit' in tuyasubdev['values']:
+                unit = tuyasubdev['values'].get('unit')
 
-            if 'max' in tuyadevice['values']:
-                max_value = tuyadevice['values'].get('max')
+            if 'max' in tuyasubdev['values']:
+                max_value = tuyasubdev['values'].get('max')
             Domoticz.Debug(f'-> raw: {raw}  scale:{scale} unit:{unit}  max_value:{max_value}')
 
             if scale == 0:
