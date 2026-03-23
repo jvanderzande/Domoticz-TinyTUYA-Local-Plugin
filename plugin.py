@@ -3,17 +3,21 @@
 # Author: Xenomes (xenomes@outlook.com)
 #
 """
-<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes" version="0.8" wikilink="" externallink="https://github.com/Xenomes/Domoticz-TinyTUYA-Local-Plugin.git">
+<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation" version="0.8" wikilink="" externallink="https://github.com/jvdzande/Domoticz-TinyTUYA-Local-Plugin.git">
     <description>
-        <h2>TinyTUYA Plugin Local Controlversion Alpha 0.8</h2><br/>
+        <h2>TinyTUYA Plugin Local</h2><br/>
         <br/>
+        <p>Plugin to get information from Tuya for below devices and send them to domoticz. This plugin is based on the TinyTUYA plugin from Xenomes.</p>
         <h3>Features</h3>
         <ul style="list-style-type:square">
-            <li>On/Off control</li>
+            <li>Weatherstation Nedis WIFIWEST500WT</li>
         </ul>
         <h3>Devices</h3>
         <ul style="list-style-type:square">
-            <li>All devices that have on/off state should be supported</li>
+            <li>Inside Temp&Humidity</li>
+            <li>Outside Temp&Humidity&Barometer</li>
+            <li>Rain</li>
+            <li>Wind</li>
         </ul>
     </description>
     <params>
@@ -486,8 +490,8 @@ def set_scale(raw, tuyasubdev):
         if tuyasubdev['values'] in 'scale':
             scale = tuyasubdev['values'].get('scale')
         # step = the_values.get('step', 0)
-        if tuyasubdev['values'] in 't2d_dunitid':
-            t2d_dunitid = tuyasubdev['values'].get('t2d_dunitid')
+        if tuyasubdev['values'] in 'unit':
+            t2d_dunitid = tuyasubdev['values'].get('unit')
         if tuyasubdev['values'] in 'max':
             max = tuyasubdev['values'].get('max')
 
@@ -511,6 +515,7 @@ def set_scale(raw, tuyasubdev):
 
 def get_scale(raw, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr):
     scale = 0
+    max_value = 0
 
     # Check if raw is a valid number (int, float, or numeric string)
     if not isinstance(raw, (list, tuple, dict, set, bool, complex, bytes, str)) or (isinstance(raw, str) and raw.isnumeric()):
@@ -518,16 +523,18 @@ def get_scale(raw, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr):
         raw = float(raw) if isinstance(raw, str) else raw
         result = raw
         try:
+            t2d_dunitid = ''
             # Domoticz.Debug('Raw Value: ' + str(raw) + '  Type: ' + str(type(raw)))
             # Domoticz.Debug('Item Values: ' + str(tuyasubdev['values']))
             if 'scale' in tuyasubdev['values']:
                 scale = tuyasubdev['values'].get('scale')
 
             if 'unit' in tuyasubdev['values']:
-                t2d_dunitid = tuyasubdev['values'].get('t2d_dunitid')
+                t2d_dunitid = tuyasubdev['values'].get('unit')
 
             if 'max' in tuyasubdev['values']:
                 max_value = tuyasubdev['values'].get('max')
+
             Domoticz.Debug(f'-> raw: {raw}  scale:{scale} t2d_dunitid:{t2d_dunitid}  max_value:{max_value}')
 
             if scale == 0:
@@ -558,29 +565,36 @@ def get_scale(raw, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr):
         result = raw
         Domoticz.Debug('Non-numeric input, returning raw value: ' + str(result))
 
-    # process defined factor or range translate in tuya2domoticz.json
-    factor = 1
-    if "factor" in t2d_dunitinfo:
-        if t2d_dunitseqnr in t2d_dunitinfo["factor"]:
-            factor = float(t2d_dunitinfo["factor"][t2d_dunitseqnr])
-    #factor == 0 means use content as-is
-    Domoticz.Debug('-process t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
-    if factor != 0:
-        # check if there is a range defined to which we need to translate the string to itemnumber
-        if "range" in tuyasubdev["values"]:
-            range_list = tuyasubdev["values"]["range"]
-            try:
-                # translate string to itemnumber
-                result = range_list.index(result)
-                Domoticz.Debug('- range-> t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
-            except ValueError:
-                result = 1  # or some default
-        # apply the found factor in case not 1
-        if factor != 1:
-            result = round(result * factor, 2)
-        Domoticz.Debug('<process t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
+    try:
+        # process defined factor or range translate in tuya2domoticz.json
+        factor = 1
+        if "factor" in t2d_dunitinfo:
+            if t2d_dunitseqnr in t2d_dunitinfo["factor"]:
+                factor = float(t2d_dunitinfo["factor"][t2d_dunitseqnr])
+        #factor == 0 means use content as-is
+        Domoticz.Debug('> process t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
+        if factor != 0:
+            # check if there is a range defined to which we need to translate the string to itemnumber
+            if "range" in tuyasubdev["values"]:
+                range_list = tuyasubdev["values"]["range"]
+                try:
+                    # translate string to itemnumber
+                    result = range_list.index(result)
+                    Domoticz.Debug('x range-> t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
+                except ValueError:
+                    result = 1  # or some default
+            # apply the found factor in case not 1
+            if factor != 1:
+                result = round(result * factor, 2)
+            Domoticz.Debug('<process t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
+    except Exception as err:
+        Domoticz.Error('factor-translate error:\n' + traceback.format_exc())
 
     return result
+
+
+
+
 
     # Configuration Helpers
 def getConfigItem(Key=None, Values=None):
