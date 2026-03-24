@@ -3,7 +3,7 @@
 # Author: Xenomes (xenomes@outlook.com)
 #
 """
-<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation" version="0.8" wikilink="" externallink="https://github.com/jvdzande/Domoticz-TinyTUYA-Local-Plugin.git">
+<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation" version="0.8" wikilink="" externallink="https://github.com/jvanderzande/Domoticz-TinyTUYA-Local-Plugin/tree/weatherstation">
     <description>
         <h2>TinyTUYA Plugin Local</h2><br/>
         <br/>
@@ -89,37 +89,7 @@ class BasePlugin:
         Domoticz.Log('onMessage called')
 
     def onCommand(self, DeviceID, Unit, Command, Level, Color):
-        Domoticz.Debug("onCommand called for Device " + str(DeviceID) + " Unit " + str(Unit) + ": Parameter '" + str(Command) + "', Level: " + str(Level) + "', Color: " + str(Color))
-
-        # device for the Domoticz
-        tuyaunit = Devices[DeviceID].Units[Unit]
-        category = getConfigItem(DeviceID, 'category')
-        # Domoticz.Debug('Device ID: ' + str(DeviceID))
-        # Domoticz.Debug('Category: ' + str(category))
-        # Domoticz.Debug('nValue: ' + str(tuyaunit.nValue))
-        # Domoticz.Debug('sValue: ' + str(tuyaunit.sValue) + ' Type ' + str(type(tuyaunit.sValue)))
-        # Domoticz.Debug('LastLevel: ' + str(tuyaunit.LastLevel))
-        # Domoticz.Debug('Type: ' + str(tuyaunit.Type) + ' ' + str(tuyaunit.SubType) + ' ' + str(tuyaunit.SwitchType))
-        # Domoticz.Debug(str(tuyadevsensors))
-        # Control device and update status in Domoticz
-        if Command == 'Set Level':
-            if tuyaunit.Type == 244 and tuyaunit.SubType == 62 and tuyaunit.SwitchType == 18:
-                mode = tuyaunit.Options['LevelNames'].split('|')
-                SendCommand(DeviceID, Unit, mode[int(Level / 10)])
-                UpdateDevice(DeviceID, Unit, Level, 1, 0)
-            else:
-                SendCommand(DeviceID, Unit, Level, category)
-                UpdateDevice(DeviceID, Unit, Level, 1, 0)
-        elif Command == 'Set Color':
-            SendCommand(DeviceID, Unit, eval(Color), category)
-            UpdateDevice(DeviceID, Unit, Color, 1, 0)
-        else:
-            if tuyaunit.Type == 81 and tuyaunit.SubType == 1:
-                SendCommand(DeviceID, Unit, Command, category)
-                UpdateDevice(DeviceID, Unit, 0, Command, 0)
-            else:
-                SendCommand(DeviceID, Unit, True if Command not in ['Off', 'Closed', False] else False, category)
-                UpdateDevice(DeviceID, Unit, Command, 1 if Command not in ['Off', 'Closed'] else 0, 0)
+        return
 
     def onNotification(self, Name, Subject, Text, Status, Priority, Sound, ImageFile):
         Domoticz.Log('Notification: ' + Name + ', ' + Subject + ', ' + Text + ', ' + Status + ', ' + str(Priority) + ', ' + Sound + ', ' + ImageFile)
@@ -263,15 +233,28 @@ def onHandleThread(startup):
             tuyaunitdevices = tuyaunit['mapping']
             # update devices in Domoticz
             Domoticz.Debug('Update devices in Domoticz')
-            tuya = tinytuya.Device(dev_id=str(tuyaunit['id']), address=str(tuyaunit['ip']), local_key=str(tuyaunit['key']), version=str(tuyaunit['version']), connection_timeout=5, connection_retry_limit=1)
-            tuya.detect_available_dps()
-            tuya.detect_available_dps() # Two times for detection bulb devices
+            tuya = tinytuya.Device(dev_id=str(tuyaunit['id']), address=str(tuyaunit['ip']), local_key=str(tuyaunit['key']), version=str(tuyaunit['version']))
+            # tuya = tinytuya.Device(dev_id=str(tuyaunit['id']), address=str(tuyaunit['ip']), local_key=str(tuyaunit['key']), version=str(tuyaunit['version']), connection_timeout=5, connection_retry_limit=1)
+            # tuya.detect_available_dps()
+            # tuya.detect_available_dps() # Two times for detection bulb devices
             tuyastatus = tuya.status()
-            tuyastatus = tuya.status()
+            # tuyastatus = tuya.status()
 
-            if DEBUGLEVEL > 0:
-                # ---- save/merge tuya stateinfo in debug modes to tuya_state_combined.json ----
-                tuya_update_state(tuyastatus, str(tuyaunit['id']))
+            # if DEBUGLEVEL > 0:
+            #     # ---- save/merge tuya stateinfo in debug modes to tuya_state_combined.json ----
+            #     tuya_update_state(tuyastatus, str(tuyaunit['id']))
+
+            # save records
+            # TuyaStateFile = Parameters['HomeFolder'] + '/tuya_state_records.json'
+            # staterecord = {}
+            # now = datetime.now()
+            # staterecord[str(tuyaunit['id'])] = {}
+            # staterecord[str(tuyaunit['id'])]["time"] = now.strftime("%Y%m%d-%H%M%S")
+            # staterecord[str(tuyaunit['id'])]["data"] = tuyastatus
+            # with open(TuyaStateFile, "a") as f:
+            #     json.dump(staterecord, f)
+            #     f.write("\n")
+
 
             last_update = getConfigItem(str(t2d_dhwid), 'last_update')
             if isinstance(last_update, dict):
@@ -360,48 +343,6 @@ def UpdateDevice(ID, Unit, sValue, nValue, TimedOut, AlwaysUpdate = 0):
         Domoticz.Debug('Update device value: ' + str(ID) + ' Unit: ' + str(Unit) + ' sValue: ' +  str(sValue) + ' nValue: ' + str(nValue) + ' TimedOut=' + str(TimedOut))
     return
 
-def SendCommand(ID, Unit, Status, Type = ''):
-    Domoticz.Debug('SendCommand =  ID:' + str(ID) + ' IP:' + str(getConfigItem(ID, 'ip'))  + ' Type:' +  str(Type) + ' Status:' +  str(Status) + ' Status Type:' +  str(type(Status)) + ' Version:' + str(getConfigItem(ID, 'version')))
-    if Type == 'light':
-        selected_device = next((tuyaunit for tuyaunit in tuyadevsensors if tuyaunit['id'] == str(ID)), None)
-        tuyasubdev = selected_device['mapping'][str(Unit)]
-        Status = get_scale(Status, tuyasubdev)
-        # Domoticz.Debug('Status: ' + str(Status))
-        tuya = tinytuya.BulbDevice(dev_id=str(ID), address=str(getConfigItem(ID, 'ip')), local_key=str(getConfigItem(ID, 'key')), version=str(getConfigItem(ID, 'version')), connection_timeout=5, connection_retry_limit=1)
-        tuya.detect_available_dps()
-        # tuya = tinytuya.BulbDevice(str(ID), getConfigItem(ID, 'ip'), getConfigItem(ID, 'key'))
-        # tuya.set_version(str(getConfigItem(ID, 'version')))
-        if type(Status) == int or type(Status) == float:
-            # Domoticz.Debug('SendCommand: brightness')
-            tuya.turn_on(switch=Unit)
-            tuya.set_brightness_percentage(Status)
-        elif type(Status) == dict:
-            if Status['m'] == 2:
-                # Domoticz.Debug('SendCommand: colourtemp')
-                tuya.turn_on()
-                tuya.set_colourtemp(Status['cw'])
-            if Status['m'] == 3:
-                # Domoticz.Debug('SendCommand: colour')
-                # Domoticz.Debug('Colour: r:' + str(Status['r']) + ' g:' + str(Status['g']) + ' b:' + str(Status['r']))
-                tuya.turn_on()
-                tuya.set_colour(Status['r'], Status['g'], Status['b'])
-        elif Status == True:
-            # Domoticz.Debug('SendCommand: On')
-            tuya.turn_on()
-        elif Status == False:
-            # Domoticz.Debug('SendCommand: Off')
-            tuya.turn_off()
-        Domoticz.Debug('Command send to tuya BulbDevice: ' + str(ID) + ", " + str({'commands': [{'Type': Type, 'value': Status}]}))
-    else:
-        selected_device = next((tuyaunit for tuyaunit in tuyadevsensors if tuyaunit['id'] == str(ID)), None)
-        tuyasubdev = selected_device['mapping'][str(Unit)]
-        Status = get_scale(Status, tuyasubdev)
-        tuya = tinytuya.Device(dev_id=str(ID), address=str(getConfigItem(ID, 'ip')), local_key=str(getConfigItem(ID, 'key')), version=str(getConfigItem(ID, 'version')), connection_timeout=5, connection_retry_limit=1)
-        tuya.detect_available_dps()
-        payload = tuya.generate_payload(tinytuya.CONTROL_NEW, {Unit: Status})
-        tuya.send(payload)
-        Domoticz.Debug('Command send to tuya Device: ' + str(ID) + ", " + str({'commands': [{'dsp': Unit, 'value': Status}]}))
-
 def searchCode(Item, Functions):
     for OneItem in Functions:
         if Item == OneItem:
@@ -425,93 +366,6 @@ def createDevice(ID, Unit):
 
     return value
 
-def battery_device(ID, ResultValue, StatusDeviceTuya):
-    # Battery_device
-    if searchCode('battery_state', ResultValue) or searchCode('battery', ResultValue) or searchCode('va_battery', ResultValue) or searchCode('battery_percentage', ResultValue):
-        if searchCode('battery_state', ResultValue):
-            if StatusDeviceTuya == 'high':
-                currentbattery = 100
-            if StatusDeviceTuya == 'middle':
-                currentbattery = 50
-            if StatusDeviceTuya == 'low':
-                currentbattery = 5
-        if searchCode('BatteryStatus', ResultValue):
-            if int(StatusDeviceTuya) == 1:
-                currentbattery = 100
-            elif int(StatusDeviceTuya) == 2:
-                currentbattery = 50
-            elif int(StatusDeviceTuya) == 3:
-                currentbattery = 5
-            else:
-                currentbattery = 100
-        if searchCode('battery', ResultValue):
-            currentbattery = StatusDeviceTuya * 10
-        if searchCode('va_battery', ResultValue):
-            currentbattery = StatusDeviceTuya
-        if searchCode('battery_percentage', ResultValue):
-            currentbattery = StatusDeviceTuya
-        if searchCode('residual_electricity', ResultValue):
-            currentbattery = StatusDeviceTuya
-        for t2d_dunitid in Devices[ID].Units:
-            if str(currentbattery) != str(Devices[ID].Units[t2d_dunitid].BatteryLevel):
-                Devices[ID].Units[t2d_dunitid].BatteryLevel = currentbattery
-                Devices[ID].Units[t2d_dunitid].Update()
-    return
-
-def online_offline(ID, StatusDeviceTuya):
-    for t2d_dunitid in Devices[ID].Units:
-        # Domoticz.Debug(str(ID) + '   ' + str(StatusDeviceTuya))
-        if str(StatusDeviceTuya) != str(Devices[ID].TimedOut):
-            Devices[ID].TimedOut = StatusDeviceTuya
-            Devices[ID].Units[t2d_dunitid].Update()
-    return
-
-def nextUnit(ID):
-    t2d_dunitid = 1
-    while t2d_dunitid in Devices(ID) and t2d_dunitid < 255:
-        t2d_dunitid = t2d_dunitid + 1
-    return t2d_dunitid
-
-
-def ping_ok(sHost) -> bool:
-    try:
-        subprocess.check_output(
-            "ping -{} 1 {}".format("n" if platform.system().lower() == "windows" else "c", sHost), shell=True
-        )
-    except Exception:
-        return False
-
-    return True
-
-def set_scale(raw, tuyasubdev):
-    scale = 0
-    try:
-        # Domoticz.Debug('Scale :' + str(tuyasubdev['values'].get('scale', 0 )))
-        if tuyasubdev['values'] in 'scale':
-            scale = tuyasubdev['values'].get('scale')
-        # step = the_values.get('step', 0)
-        if tuyasubdev['values'] in 'unit':
-            t2d_dunitid = tuyasubdev['values'].get('unit')
-        if tuyasubdev['values'] in 'max':
-            max = tuyasubdev['values'].get('max')
-
-        if scale == 1:
-            result = int(raw * 10)
-        elif scale == 2:
-            result = int(raw * 100)
-        elif scale == 3:
-            result = int(raw * 1000)
-        else:
-            result = int(raw)
-        if result > max:
-            result = int(max)
-            Domoticz.Log('Value higher then maximum device')
-        elif result < min:
-            result = int(min)
-            Domoticz.Log('Value lower then minium device')
-    except:
-        result = str(raw)
-    return result
 
 def get_scale(raw, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr):
     scale = 0
@@ -612,20 +466,6 @@ def getConfigItem(Key=None, Values=None):
         Domoticz.Error('Domoticz.Configuration read failed: ' + str(inst))
     return Value
 
-def setConfigItem(Key=None, Value=None):
-    Config = {}
-    try:
-        Config = Domoticz.Configuration()
-        if (Key != None):
-            Config[Key] = Value
-        else:
-            Config = Value  # set whole configuration if no key specified
-        Config = Domoticz.Configuration(Config)
-    # except Exception as inst:
-    #     Domoticz.Error('Domoticz.Configuration operation failed: ' + str(inst))
-    except Exception as err:
-        Domoticz.Error('handleThread error:\n' + traceback.format_exc())
-    return Config
 
 def version(v):
     return tuple(map(int, (v.split("."))))
