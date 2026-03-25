@@ -441,6 +441,16 @@ def get_scale(raw, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr):
             if factor != 1:
                 result = round(result * factor, 2)
             Domoticz.Debug('<process t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
+
+        if "compare" in t2d_dunitinfo:
+            if t2d_dunitseqnr in t2d_dunitinfo["compare"]:
+                for key, value in t2d_dunitinfo["compare"][t2d_dunitseqnr].items():
+                    if eval(str(result)+ key):
+                        Domoticz.Debug(f' - compare Yes {result}{key} => New value: {value}')
+                        result = value
+                        break
+                    Domoticz.Debug(f' - compare No {result}{key}')
+
     except Exception as err:
         Domoticz.Error('factor-translate error:\n' + traceback.format_exc())
 
