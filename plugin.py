@@ -3,7 +3,7 @@
 # Author: Xenomes (xenomes@outlook.com)
 #
 """
-<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation" version="0.8" wikilink="" externallink="https://github.com/jvanderzande/Domoticz-TinyTUYA-Local-Plugin/tree/weatherstation">
+<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation" version="0.8.1" wikilink="" externallink="https://github.com/jvanderzande/Domoticz-TinyTUYA-Local-Plugin/tree/weatherstation">
     <description>
         <h2>TinyTUYA Plugin Local</h2><br/>
         <br/>
@@ -268,13 +268,20 @@ def onHandleThread(startup):
                     try:
                         # Domoticz.Debug('process t2d_dunitid '+str(t2d_dunitid) + "  dtype:" + str(dtype))
                         svalue=""
+                        skipupdate = False
                         for t2d_dunitseqnr, t2d_tunitid in t2d_dunitinfo["TuyaIDs"].items():  # loop through all entries/columns for this t2d_dunitid
+                            if skipupdate:
+                                break
                             # Domoticz.Debug('--> process '+str(t2d_dunitseqnr)+  " -> t2d_tunitid:" + str(t2d_tunitid))
                             # Domoticz.Debug('>dps '+ str(dps))
                             if t2d_tunitid == "0":
                                 currentstatus = 0
                             else:
-                                item_value = dps.get(t2d_tunitid, 0)   # t2d_tunitid is e.g., '101'
+                                item_value = dps.get(t2d_tunitid)   # t2d_tunitid is e.g., '101'
+                                if item_value is None:
+                                    Domoticz.Log(f'<- Skip update as t2d_dunitid:{t2d_dunitid}  t2d_tunitid:{t2d_tunitid}  item_value is missing.')
+                                    skipupdate = True
+                                    break
                                 # Domoticz.Debug('>process t2d_tunitid '+ t2d_tunitid + '  item_value: ' + str(item_value))
                                 # Get Tuya sensor info
                                 tuyasubdev = tuyaunitdevices.get(t2d_tunitid)
@@ -287,7 +294,8 @@ def onHandleThread(startup):
                             Domoticz.Debug('+ process t2d_dunitid '+str(t2d_dunitid) + ' t2d_dunitseqnr:' + str(t2d_dunitseqnr) + '  t2d_tunitid:' + str(t2d_tunitid) + ' currentstatus:' + str(currentstatus) + ' new svalue:' + str(svalue))
 
                         Domoticz.Debug('< process t2d_dunitid '+str(t2d_dunitid)+ ' svalue:' + str(svalue))
-                        UpdateDevice(str(t2d_dhwid), t2d_dunitid, str(svalue), 0, 0)
+                        if not skipupdate:
+                            UpdateDevice(str(t2d_dhwid), t2d_dunitid, str(svalue), 0, 0)
                     except Exception:
                         Domoticz.Error('device value error:\n' + traceback.format_exc())
 
@@ -439,8 +447,21 @@ def get_scale(raw, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr):
                     result = 1  # or some default
             # apply the found factor in case not 1
             if factor != 1:
-                result = round(result * factor, 2)
+                result = result * factor
+
+            # do the rounding
+            if "decimals" in t2d_dunitinfo:
+                if t2d_dunitseqnr in t2d_dunitinfo["decimals"]:
+                    dec = t2d_dunitinfo["decimals"][t2d_dunitseqnr]
+                    nresult = f"{round(result, int(dec)):.{dec}f}"
+                    Domoticz.Debug('x< decimals-> t2d_dunitseqnr '+ t2d_dunitseqnr + '  dec: ' + str(dec) + '  raw: ' + str(raw) + '  result: ' + str(result) + '  nresult: ' + str(nresult))
+                    result = nresult
+
             Domoticz.Debug('<process t2d_dunitseqnr '+ t2d_dunitseqnr + '  raw: ' + str(raw) + '  result: ' + str(result) + '  factor: ' + str(factor))
+
+# 2026-03-25 22:32:15.368  Tuya: x< decimals-> t2d_dunitseqnr 4  t2d_dunitinfo["decimals"][t2d_dunitseqnr]: 0  result: 0.0
+
+
 
         if "compare" in t2d_dunitinfo:
             if t2d_dunitseqnr in t2d_dunitinfo["compare"]:
