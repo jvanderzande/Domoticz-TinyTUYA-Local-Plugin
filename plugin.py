@@ -3,7 +3,7 @@
 # Author: Xenomes (xenomes@outlook.com)
 #
 """
-<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation" version="0.8.1" wikilink="" externallink="https://github.com/jvanderzande/Domoticz-TinyTUYA-Local-Plugin/tree/weatherstation">
+<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation" version="0.8.2" wikilink="" externallink="https://github.com/jvanderzande/Domoticz-TinyTUYA-Local-Plugin/tree/weatherstation">
     <description>
         <h2>TinyTUYA Plugin Local</h2><br/>
         <br/>
@@ -81,6 +81,14 @@ class BasePlugin:
 
     def onStop(self):
         Domoticz.Log('onStop called')
+        global tuya_devices
+        for dev in tuya_devices.values():
+            try:
+                if hasattr(dev, "close"):
+                    dev.close()
+            except Exception:
+                pass
+        tuya_devices.clear()
 
     def onConnect(self, Connection, Status, Description):
         Domoticz.Log('onConnect called')
@@ -110,6 +118,7 @@ class BasePlugin:
 
 global _plugin
 _plugin = BasePlugin()
+tuya_devices = {}
 
 def onStart():
     global _plugin
@@ -223,6 +232,8 @@ def tuya_update_state(new_data, device_id):
 def onHandleThread(startup):
     # Run for every device on startup and heartbeat
     try:
+        global tuya_devices
+
         # Update devices
         for t2d_dhwid, t2d_dhwinfo in tuya2domo.items():
             # Domoticz.Debug( 'Device name=' + str(tuyaunit['name']) + ' id=' + str(tuyaunit['id']) + ' ip=' + str(tuyaunit['ip']) + ' version=' + str(tuyaunit['version'])) # ' key=' + str(tuyaunit['key']) +
@@ -230,31 +241,30 @@ def onHandleThread(startup):
             tuyaunit = next((tuyaunit for tuyaunit in tuyadevsensors if tuyaunit['id'] == str(t2d_dhwid)), None)
             # Domoticz.Debug('t2d_dhwid:' + str(t2d_dhwid) + '   tdev:' + str(tdev))
             # Domoticz.Debug(str(code_list))
+
+            if tuyaunit is None:
+                Domoticz.Error(f"No tuyaunit found for id {t2d_dhwid}")
+                continue
+
             tuyaunitdevices = tuyaunit['mapping']
             # update devices in Domoticz
             Domoticz.Debug('Update devices in Domoticz')
-            tuya = tinytuya.Device(dev_id=str(tuyaunit['id']), address=str(tuyaunit['ip']), local_key=str(tuyaunit['key']), version=str(tuyaunit['version']))
-            # tuya = tinytuya.Device(dev_id=str(tuyaunit['id']), address=str(tuyaunit['ip']), local_key=str(tuyaunit['key']), version=str(tuyaunit['version']), connection_timeout=5, connection_retry_limit=1)
-            # tuya.detect_available_dps()
-            # tuya.detect_available_dps() # Two times for detection bulb devices
+
+            device_id = str(tuyaunit['id'])
+            # Create device only once
+            if device_id not in tuya_devices:
+                Domoticz.Debug(f'Creating persistent Tuya device for {device_id}')
+                tuya_devices[device_id] = tinytuya.Device(
+                    dev_id=device_id,
+                    address=str(tuyaunit['ip']),
+                    local_key=str(tuyaunit['key']),
+                    version=str(tuyaunit['version'])
+                )
+            # Get info from tuyadevice
+            tuya = tuya_devices[device_id]
+
+            # Get status
             tuyastatus = tuya.status()
-            # tuyastatus = tuya.status()
-
-            # if DEBUGLEVEL > 0:
-            #     # ---- save/merge tuya stateinfo in debug modes to tuya_state_combined.json ----
-            #     tuya_update_state(tuyastatus, str(tuyaunit['id']))
-
-            # save records
-            # TuyaStateFile = Parameters['HomeFolder'] + '/tuya_state_records.json'
-            # staterecord = {}
-            # now = datetime.now()
-            # staterecord[str(tuyaunit['id'])] = {}
-            # staterecord[str(tuyaunit['id'])]["time"] = now.strftime("%Y%m%d-%H%M%S")
-            # staterecord[str(tuyaunit['id'])]["data"] = tuyastatus
-            # with open(TuyaStateFile, "a") as f:
-            #     json.dump(staterecord, f)
-            #     f.write("\n")
-
 
             last_update = getConfigItem(str(t2d_dhwid), 'last_update')
             if isinstance(last_update, dict):
@@ -267,6 +277,8 @@ def onHandleThread(startup):
                     # Domoticz.Debug(Devices[str(t2d_dhwid)].Units[int(t2d_dunitid)])
                     try:
                         # Domoticz.Debug('process t2d_dunitid '+str(t2d_dunitid) + "  dtype:" + str(dtype))
+                        # Get all values required for this Domoticz device from the tuya data to build the svalue string.
+                        # skip updating domoticz device when one the required values is missing.
                         svalue=""
                         skipupdate = False
                         for t2d_dunitseqnr, t2d_tunitid in t2d_dunitinfo["TuyaIDs"].items():  # loop through all entries/columns for this t2d_dunitid
@@ -279,7 +291,7 @@ def onHandleThread(startup):
                             else:
                                 item_value = dps.get(t2d_tunitid)   # t2d_tunitid is e.g., '101'
                                 if item_value is None:
-                                    Domoticz.Log(f'<- Skip update as t2d_dunitid:{t2d_dunitid}  t2d_tunitid:{t2d_tunitid}  item_value is missing.')
+                                    Domoticz.Log(f'- Skip update for DomoticzUnit:{t2d_dunitid} as TuyaID:{t2d_tunitid} item_value is missing.')
                                     skipupdate = True
                                     break
                                 # Domoticz.Debug('>process t2d_tunitid '+ t2d_tunitid + '  item_value: ' + str(item_value))
