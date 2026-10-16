@@ -3,7 +3,7 @@
 # Author: Xenomes (xenomes@outlook.com)
 #
 """
-<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation" version="0.8.2" wikilink="" externallink="https://github.com/jvanderzande/Domoticz-TinyTUYA-Local-Plugin/tree/weatherstation">
+<plugin key="tinytuyalocal" name="TinyTUYA (Local Control)" author="Xenomes modified by jvdzande for Weatherstation." version="0.8.31" wikilink="" externallink="https://github.com/jvanderzande/Domoticz-TinyTUYA-Local-Plugin/tree/weatherstation">
     <description>
         <h2>TinyTUYA Plugin Local</h2><br/>
         <br/>
@@ -52,6 +52,14 @@ import time
 import base64
 import traceback
 from datetime import datetime, timedelta
+
+# Tuya DP ids that hold a counter which restarts every day (e.g. DP 114 = rain of today).
+# For these DPs a running total is kept in tuya_counter_state.json (see process_daily_counter).
+DAILY_COUNTER_DPS = ("114",)
+# What is sent to Domoticz for these DPs:
+#   "total" -> the running total (use for cumulative Domoticz counters like Rain)
+#   "delta" -> only what this reading added to the total (0 when nothing was added)
+DAILY_COUNTER_SEND = "total"
 
 
 class BasePlugin:
@@ -229,6 +237,131 @@ def tuya_update_state(new_data, device_id):
     tuya_save_state(state)
     return state
 
+def counter_state_path():
+    return Parameters['HomeFolder'] + '/tuya_counter_state.json'
+
+def counter_load_state():
+    try:
+        with open(counter_state_path(), "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    except Exception:
+        Domoticz.Error('counter state read error:\n' + traceback.format_exc())
+        return {}
+
+def counter_save_state(state):
+    # write to a temp file first so a crash can't leave a corrupt json file
+    path = counter_state_path()
+    tmp = path + '.tmp'
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=2)
+    os.replace(tmp, path)
+
+def process_daily_counter(device_id, dp_id, value, t2d_dunitinfo, t2d_dunitseqnr):
+    """
+    Turn a daily counter DP (resets every day) into a running total.
+
+    Stored per device/DP in tuya_counter_state.json:
+      total        - running total
+      last_value   - last DP value received
+      last_updated - timestamp of the last update
+
+    Rules:
+      - new value differs and date is newer     -> new day:       total += new
+      - new value is larger and date is the same -> counter update: total += new - old
+      - new value is same and date is newer      -> no rain:       nothing is changed, delta = 0
+    Not covered by those rules (handled as follows):
+      - first value ever             -> total += new
+      - same date, value went down   -> counter was reset: total += new
+      - same date, same value        -> nothing to do
+    Returns the value to send to Domoticz (see DAILY_COUNTER_SEND).
+    """
+    try:
+        new_value = float(value)
+    except (TypeError, ValueError):
+        Domoticz.Error(f'Daily counter DP {dp_id}: non-numeric value {value!r}, passed on unchanged')
+        return value
+
+    try:
+        now = datetime.now()
+        state = counter_load_state()
+        entry = state.setdefault(device_id, {}).setdefault(
+            dp_id, {"total": 0.0, "last_value": None, "last_updated": None})
+
+        prev = entry.get("last_value")
+        prev_date = None
+        if entry.get("last_updated"):
+            try:
+                prev_date = datetime.fromisoformat(entry["last_updated"]).date()
+            except ValueError:
+                prev_date = None
+
+        same_value = prev is not None and abs(new_value - prev) < 1e-9
+        delta = 0.0
+        changed = False  # True when the json file needs to be written
+
+        if prev is None or prev_date is None:
+            delta = new_value
+            changed = True
+            Domoticz.Log(f'Daily rain: start of the counter, first value {new_value}  Total:{round(float(entry.get("total", 0.0)) + delta, 2)}')
+        elif now.date() > prev_date:
+            if not same_value:
+                # new day with a different value -> add it to the total
+                delta = new_value
+                changed = True
+                Domoticz.Log(f'Daily rain: new day, {prev} -> {new_value}  Total:{round(float(entry.get("total", 0.0)) + delta, 2)}')
+            else:
+                # new day, same value -> assume no rain, leave the saved state untouched
+                Domoticz.Debug(f'Daily rain: new day but same value {new_value}, no rain assumed')
+        else:
+            if new_value > prev:
+                # same day, counter increased -> add new and subtract old
+                delta = round(new_value - prev, 2)
+                changed = True
+                Domoticz.Log(f'Daily rain: counter update {prev} -> {new_value}  Total:{round(float(entry.get("total", 0.0)) + delta, 2)}')
+            elif new_value < prev:
+                # same day, counter decreased -> device reset, start counting from the new value
+                delta = new_value
+                changed = True
+                Domoticz.Log(f'Daily rain: counter went down {prev} -> {new_value}, treated as new for today. Total:{round(float(entry.get("total", 0.0)) + delta, 2)}')
+            # same day and same value: nothing to do
+
+        if changed:
+            entry["total"] = round(float(entry.get("total", 0.0)) + delta, 2)
+            entry["last_value"] = new_value
+            entry["last_updated"] = now.isoformat(timespec="seconds")
+            counter_save_state(state)
+
+        result = delta if DAILY_COUNTER_SEND == "delta" else entry["total"]
+    except Exception:
+        Domoticz.Error('daily counter error:\n' + traceback.format_exc())
+        return value
+
+    dec = t2d_dunitinfo.get("decimals", {}).get(t2d_dunitseqnr)
+    if dec is not None:
+        return f"{round(result, int(dec)):.{int(dec)}f}"
+    return str(round(result, 3))
+
+def log_raw_status(device_id, status, tuya, duration, svalue):
+    try:
+        entry = {
+            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "id": device_id,
+            "duration_ms": round(duration * 1000),
+            "svalue": svalue,
+            "status": status,                                   # complete response, incl. errors
+            "dps_cache": getattr(tuya, "dps_cache", None),      # last known value of every DP seen
+        }
+        path = Parameters['HomeFolder'] + '/tuya-raw.jsonl'
+        # simple rotation at ~5 MB, keeping one previous file
+        if os.path.exists(path) and os.path.getsize(path) > 5 * 1024 * 1024:
+            os.replace(path, path + '.1')
+        with open(path, "a") as f:
+            f.write(json.dumps(entry, default=str) + "\n")
+    except Exception:
+        Domoticz.Error('raw log error:\n' + traceback.format_exc())
+
 def onHandleThread(startup):
     # Run for every device on startup and heartbeat
     try:
@@ -264,6 +397,7 @@ def onHandleThread(startup):
             tuya = tuya_devices[device_id]
 
             # Get status
+            t0 = time.time()
             tuyastatus = tuya.status()
 
             last_update = getConfigItem(str(t2d_dhwid), 'last_update')
@@ -292,6 +426,9 @@ def onHandleThread(startup):
                                 item_value = dps.get(t2d_tunitid)   # t2d_tunitid is e.g., '101'
                                 if item_value is None:
                                     Domoticz.Log(f'- Skip update for DomoticzUnit:{t2d_dunitid} as TuyaID:{t2d_tunitid} item_value is missing.')
+                                    if t2d_tunitid in DAILY_COUNTER_DPS:
+                                        # write dps data to log file tuya-raw.json to see what is missing
+                                        log_raw_status(device_id, tuyastatus, tuya, time.time() - t0, "----")
                                     skipupdate = True
                                     break
                                 # Domoticz.Debug('>process t2d_tunitid '+ t2d_tunitid + '  item_value: ' + str(item_value))
@@ -299,6 +436,11 @@ def onHandleThread(startup):
                                 tuyasubdev = tuyaunitdevices.get(t2d_tunitid)
                                 # Domoticz.Debug('>process tuyasubdev: '+str(tuyasubdev))
                                 currentstatus = get_scale(item_value, tuyasubdev, t2d_dunitinfo, t2d_dunitseqnr)
+                                # daily counters (e.g. DP 114) are converted to a running total
+                                if t2d_tunitid in DAILY_COUNTER_DPS:
+                                    currentstatus = process_daily_counter(device_id, t2d_tunitid, currentstatus, t2d_dunitinfo, t2d_dunitseqnr)
+                                    # write dps data to log file tuya-raw.json
+                                    log_raw_status(device_id, tuyastatus, tuya, time.time() - t0, svalue + ";" + str(currentstatus))
 
                             if svalue != "":
                                 svalue+=";"
