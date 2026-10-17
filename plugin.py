@@ -312,8 +312,9 @@ def process_daily_counter(device_id, dp_id, value, t2d_dunitinfo, t2d_dunitseqnr
                 changed = True
                 Domoticz.Log(f'Daily rain: new day, {prev} -> {new_value}  Total:{round(float(entry.get("total", 0.0)) + delta, 2)}')
             else:
-                # new day, same value -> assume no rain, leave the saved state untouched
-                Domoticz.Debug(f'Daily rain: new day but same value {new_value}, no rain assumed')
+                # new day, same value -> assume no rain, update the timestamp to get correct startvalue for the day
+                changed = True
+                Domoticz.Debug(f'Daily rain: new day & same value {new_value}, no rain assumed so only update save info to today.')
         else:
             if new_value > prev:
                 # same day, counter increased -> add new and subtract old
